@@ -1,134 +1,53 @@
-name: Process Light DNS Blocklist
+name: Process DNS Blocklist
 
 on:
   schedule:
-    # Run daily at 00:00 UTC
     - cron: '0 0 * * *'
-  workflow_dispatch:  # Allow manual triggering
+  workflow_dispatch:
   push:
     branches: [ main ]
 
 jobs:
-  process:
+  update:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout lightadlist
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
       with:
         token: ${{ secrets.GITHUB_TOKEN }}
-        
-    - name: Download latest light.txt
+    
+    - name: Download and filter blocklist
       run: |
-        echo "⬇️ Downloading latest light.txt from hagezi..."
-        curl -s -L -o light-raw.txt "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/hosts/light.txt"
+        # Download the file
+        curl -s "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/hosts/light.txt" -o original.txt
         
-        # Count total lines
-        TOTAL_LINES=$(wc -l < light-raw.txt)
-        echo "📊 Original file has $TOTAL_LINES lines"
+        # Create filtered version
+        {
+          echo "# Filtered DNS Blocklist"
+          echo "# Source: hagezi/dns-blocklists/light.txt"
+          echo "# Filter: Only 0.0.0.0 entries"
+          echo "# Generated: $(date)"
+          echo ""
+          grep -E '^#|^$|^0\.0\.0\.0[[:space:]]' original.txt
+        } > filtered.txt
         
-    - name: Filter for 0.0.0.0 only
+        # Count entries
+        TOTAL=$(wc -l < original.txt)
+        KEPT=$(grep -c '^0\.0\.0\.0' filtered.txt || echo "0")
+        
+        echo "Total: $TOTAL, Kept: $KEPT"
+        
+    - name: Create README
       run: |
-        echo "🔍 Filtering for 0.0.0.0 entries only..."
-        
-        # Create processed file with header
-        cat > light.txt << 'EOF'
-# ======================================================
-# lightadlist - Filtered DNS Blocklist
-# ======================================================
-# Repository: https://github.com/${{ github.repository }}
-# Source: hagezi/dns-blocklists - light.txt
-# Filter: Only 0.0.0.0 IP addresses
-# Updated: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-# ======================================================
-
-EOF
-        
-        # Initialize counters
-        KEPT=0
-        REMOVED=0
-        
-        # Process each line
-        while IFS= read -r line || [[ -n "$line" ]]; do
-          # Keep comment lines and empty lines
-          if [[ -z "$line" ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
-            echo "$line" >> light.txt
-          # Check for IP at beginning of line
-          elif [[ "$line" =~ ^([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)[[:space:]] ]]; then
-            IP="${BASH_REMATCH[1]}"
-            if [[ "$IP" == "0.0.0.0" ]]; then
-              echo "$line" >> light.txt
-              ((KEPT++))
-            else
-              ((REMOVED++))
-            fi
-          else
-            # Not an IP line, keep it as-is
-            echo "$line" >> light.txt
-          fi
-        done < light-raw.txt
-        
-        # Add statistics footer
-        cat >> light.txt << EOF
-
-# ======================================================
-# Statistics
-# ======================================================
-# Total lines in source: $TOTAL_LINES
-# 0.0.0.0 entries kept: $KEPT
-# Other IP entries removed: $REMOVED
-# Filter efficiency: $((KEPT * 100 / (KEPT + REMOVED)))%
-# ======================================================
-EOF
-        
-        echo "✅ Filtering complete!"
-        echo "📈 Statistics:"
-        echo "   Kept: $KEPT entries"
-        echo "   Removed: $REMOVED entries"
-        
-    - name: Update README.md
-      run: |
-        # Create or update README
         cat > README.md << 'EOF'
-# lightadlist 🚀
-
-A filtered version of [hagezi/dns-blocklists](https://github.com/hagezi/dns-blocklists) containing only `0.0.0.0` entries.
-
-## 📋 About
-
-This repository automatically processes the `light.txt` file from hagezi's DNS blocklists, keeping only entries with the IP address `0.0.0.0`. This is useful for:
-
-- **Hosts file blocking** - `0.0.0.0` is commonly used for DNS sinkholing
-- **DNS filtering** - Compatible with Pi-hole, AdGuard, etc.
-- **Lightweight blocking** - Removes unnecessary entries
-
-## 📁 Files
-
-| File | Description |
-|------|-------------|
-| [`light.txt`](./light.txt) | Processed blocklist (only 0.0.0.0 entries) |
-| [`light-raw.txt`](./light-raw.txt) | Original downloaded file (for reference) |
-
-## 📊 Latest Statistics
-
-**Last Update:** $(date -u +'%Y-%m-%d %H:%M:%S UTC')
-
-| Metric | Count |
-|--------|-------|
-| Total source lines | $(wc -l < light-raw.txt) |
-| 0.0.0.0 entries kept | $(grep -c '^0\.0\.0\.0' light.txt || echo "0") |
-| Other IPs removed | $(( $(wc -l < light-raw.txt) - $(grep -c '^0\.0\.0\.0' light.txt || echo "0") )) |
-
-## 🔄 Automation
-
-This list is automatically updated **daily at 00:00 UTC** via GitHub Actions.
-
-You can also trigger a manual update:
-1. Go to the [Actions tab](https://github.com/${{ github.repository }}/actions)
-2. Select "Process Light DNS Blocklist"
-3. Click "Run workflow"
-
-## 🚀 Usage
-
-### Direct URL
-Use this URL to access the processed list directly:
+# Light DNS Blocklist
+Filtered version of hagezi's blocklist.
+EOF
+    
+    - name: Commit changes
+      run: |
+        git config user.email "actions@github.com"
+        git config user.name "GitHub Actions"
+        git add filtered.txt original.txt README.md
+        git commit -m "Update blocklist" || exit 0
+        git push
