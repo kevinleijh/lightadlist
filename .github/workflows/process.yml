@@ -2,52 +2,85 @@ name: Process DNS Blocklist
 
 on:
   schedule:
-    - cron: '0 0 * * *'
-  workflow_dispatch:
+    - cron: '0 0 * * *'  # Daily at midnight UTC
+  workflow_dispatch:      # Allow manual run
   push:
     branches: [ main ]
+
+permissions:
+  contents: write        # ✅ THIS IS CRITICAL - gives write permission
 
 jobs:
   update:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v4
-      with:
-        token: ${{ secrets.GITHUB_TOKEN }}
-    
-    - name: Download and filter blocklist
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      
+    - name: Download blocklist
       run: |
-        # Download the file
-        curl -s "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/hosts/light.txt" -o original.txt
+        echo "📥 Downloading latest blocklist..."
+        curl -s -L -o original.txt "https://cdn.jsdelivr.net/gh/hagezi/dns-blocklists@latest/hosts/light.txt"
+        echo "✅ Downloaded! Total lines: $(wc -l < original.txt)"
         
-        # Create filtered version
-        {
-          echo "# Filtered DNS Blocklist"
-          echo "# Source: hagezi/dns-blocklists/light.txt"
-          echo "# Filter: Only 0.0.0.0 entries"
-          echo "# Generated: $(date)"
-          echo ""
-          grep -E '^#|^$|^0\.0\.0\.0[[:space:]]' original.txt
-        } > filtered.txt
+    - name: Filter blocklist (keep only 0.0.0.0)
+      run: |
+        echo "🔍 Filtering for 0.0.0.0 entries..."
         
-        # Count entries
+        # Create filtered.txt with only 0.0.0.0 entries
+        echo "# Filtered DNS Blocklist" > filtered.txt
+        echo "# Source: hagezi/dns-blocklists/light.txt" >> filtered.txt
+        echo "# Filter: Only 0.0.0.0 entries" >> filtered.txt
+        echo "# Generated: $(date)" >> filtered.txt
+        echo "" >> filtered.txt
+        
+        # Use grep to keep: comments, empty lines, and 0.0.0.0 entries
+        grep -E '^#|^$|^0\.0\.0\.0[[:space:]]' original.txt >> filtered.txt
+        
+        # Count and show results
         TOTAL=$(wc -l < original.txt)
         KEPT=$(grep -c '^0\.0\.0\.0' filtered.txt || echo "0")
-        
-        echo "Total: $TOTAL, Kept: $KEPT"
+        echo "📊 Results: Total=$TOTAL, Kept=$KEPT"
         
     - name: Create README
       run: |
-        cat > README.md << 'EOF'
-# Light DNS Blocklist 
-Filtered version of hagezi's blocklist.
-EOF
-    
-    - name: Commit changes
+        # Create a simple README
+        echo "# Light DNS Blocklist" > README.md
+        echo "" >> README.md
+        echo "This repository contains a filtered version of hagezi's DNS blocklist." >> README.md
+        echo "" >> README.md
+        echo "## Files" >> README.md
+        echo "- **filtered.txt**: Contains only entries with IP 0.0.0.0" >> README.md
+        echo "- **original.txt**: The original downloaded file" >> README.md
+        echo "" >> README.md
+        echo "## Usage" >> README.md
+        echo "Use this URL in Pi-hole, AdGuard, or your hosts file:" >> README.md
+        echo "\`\`\`" >> README.md
+        echo "https://raw.githubusercontent.com/${{ github.repository }}/main/filtered.txt" >> README.md
+        echo "\`\`\`" >> README.md
+        echo "" >> README.md
+        echo "*Automatically updated daily*" >> README.md
+        
+    - name: Commit and push changes
       run: |
-        git config user.email "actions@github.com"
-        git config user.name "GitHub Actions"
+        # Configure git
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git config --global user.name "github-actions[bot]"
+        
+        # Add files
         git add filtered.txt original.txt README.md
-        git commit -m "Update blocklist" || exit 0
-        git push
+        
+        # Check if there are changes
+        if git diff --cached --quiet; then
+          echo "✅ No changes to commit"
+        else
+          # Commit and push
+          git commit -m "🔄 Auto-update: $(date +'%Y-%m-%d')
+          
+          • Updated filtered DNS blocklist
+          • Only 0.0.0.0 entries kept
+          • Automated by GitHub Actions"
+          git push
+          echo "✅ Successfully updated repository!"
+        fi
