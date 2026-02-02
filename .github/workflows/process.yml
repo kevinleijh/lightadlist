@@ -40,7 +40,7 @@ jobs:
     - name: Create README
       run: |
         cat > README.md << 'EOF'
-# Light DNS Blocklist
+# Light DNS Blocklist 
 Filtered version of hagezi's blocklist.
 EOF
     
