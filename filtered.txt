@@ -1,7 +1,7 @@
 # Filtered DNS Blocklist
 # Source: hagezi/dns-blocklists/light.txt
 # Filter: Only 0.0.0.0 entries
-# Generated: Fri Jul 31 01:21:57 UTC 2026
+# Generated: Mon Aug 10 00:41:52 UTC 2026
 
 # Title: HaGeZi's Light DNS Blocklist
 # Description: Hand brush - Cleans the Internet and protects your privacy! Blocks Ads, Tracking, Metrics and some Badware.
